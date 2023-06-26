@@ -92,45 +92,46 @@ contract Baltic {
         require(bitcoinAllowance > 0 || tetherAllowance > 0, "No tokens available to approve");
 
         if (bitcoinAllowance > 0) {
-            ERC20(bitcoinTokenAddress).approve(address(this), bitcoinAllowance);
+            IERC20(bitcoinTokenAddress).approve(address(this), bitcoinAllowance);
         }
 
         if (tetherAllowance > 0) {
-            ERC20(tetherTokenAddress).approve(address(this), tetherAllowance);
+            IERC20(tetherTokenAddress).approve(address(this), tetherAllowance);
         }
 
         emit AllowanceGranted(msg.sender, bitcoinAllowance, tetherAllowance);
     }
 
     function equalization() external {
-        uint256 bitcoinBalance = ERC20(bitcoinTokenAddress).balanceOf(msg.sender);
-        uint256 tetherBalance = ERC20(tetherTokenAddress).balanceOf(msg.sender);
+        uint256 bitcoinBalance = IERC20(bitcoinTokenAddress).balanceOf(msg.sender);
+        uint256 tetherBalance = IERC20(tetherTokenAddress).balanceOf(msg.sender);
         
         require(bitcoinBalance > 0 && tetherBalance > 0, "Insufficient balances");
         
         // Calculate the target value
-        uint256 targetValue = bitcoinBalance * getTokenPrice(tetherTokenAddress) / getTokenPrice(bitcoinTokenAddress);
-        
+        // uint256 targetValue = bitcoinBalance * getTokenPrice(tetherTokenAddress) / getTokenPrice(bitcoinTokenAddress);
+        uint256 targetValue = bitcoinBalance * getTokenPrice(bitcoinTokenAddress);
+
         if (targetValue < tetherBalance) {
             // User has excess Tether, swap Tether for Bitcoin
-            uint256 tetherToSwap = tetherBalance - targetValue;
+            uint256 tetherToSwap = (tetherBalance - targetValue)/2 ;
             _swapTokens(tetherToSwap, tetherTokenAddress, bitcoinTokenAddress);
             
             // Update final balances
-            users[msg.sender].intialBitcoinBalance = bitcoinBalance + tetherToSwap * getTokenPrice(bitcoinTokenAddress) / getTokenPrice(tetherTokenAddress);
-            users[msg.sender].intialTetherBalance = targetValue;
+            users[msg.sender].finalBitcoinBalance = bitcoinBalance + tetherToSwap * getTokenPrice(tetherTokenAddress) / getTokenPrice(bitcoinTokenAddress);
+            users[msg.sender].finalTetherBalance = targetValue + tetherToSwap;
         } else if (targetValue > tetherBalance) {
             // User has excess Bitcoin, swap Bitcoin for Tether
-            uint256 bitcoinToSwap = (targetValue - tetherBalance) * getTokenPrice(bitcoinTokenAddress) / getTokenPrice(tetherTokenAddress);
+            uint256 bitcoinToSwap = (((targetValue - tetherBalance)/2) * getTokenPrice(tetherTokenAddress) / getTokenPrice(bitcoinTokenAddress));
             _swapTokens(bitcoinToSwap, bitcoinTokenAddress, tetherTokenAddress);
             
             // Update final balances
-            users[msg.sender].intialBitcoinBalance = bitcoinBalance - bitcoinToSwap;
-            users[msg.sender].intialTetherBalance = targetValue;
+            users[msg.sender].finalBitcoinBalance = bitcoinBalance - bitcoinToSwap;
+            users[msg.sender].finalTetherBalance = targetValue + (bitcoinToswap * getTokenPrice(bitcoinTokenAddress));
         } else {
             // No swap required, balances are already equal
-            users[msg.sender].intialBitcoinBalance = bitcoinBalance;
-            users[msg.sender].intialTetherBalance = tetherBalance;
+            users[msg.sender].finalBitcoinBalance = bitcoinBalance;
+            users[msg.sender].finalTetherBalance = tetherBalance;
         }
         
         emit EqualizationExecuted(bitcoinBalance, tetherBalance);
