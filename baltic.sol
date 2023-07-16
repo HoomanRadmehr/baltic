@@ -1,232 +1,203 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.6.0;
+
+pragma solidity ^0.8.4;
+
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/IERC20.sol";
+import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3SwapCallback.sol";
+import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/IUniswapV3Pool.sol";
+import "https://github.com/Uniswap/v3-periphery/blob/main/contracts/interfaces/ISwapRouter.sol";
+import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/IUniswapV3Factory.sol";
+import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolImmutables.sol";
+import '@uniswap/v3-core/contracts/libraries/FixedPoint96.sol';
+import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolOwnerActions.sol";
+import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolEvents.sol";
+import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolActions.sol";
+import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolState.sol";
+// import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolDerivedState.sol";
+// import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/Context.sol";
 
 
-import '@openzeppelin/contracts/token/ERC20/ERC20.sol';
-import 'https://github.com/Uniswap/uniswap-v2-periphery/blob/master/contracts/UniswapV2Router01.sol';
+contract Baltic is Ownable {
+    IUniswapV3Pool public btcUsdtPool;
+    ISwapRouter public swapRouter;
 
+    address public BTC_ADDRESS;
+    address public USDT_ADDRESS;
+    address public ECG_ADDRESS;
+    address public MATIC_ADDRESS;
 
+    uint public BTC_DECIMALS;
+    uint public USDT_DECIMALS;
+    uint public ECG_DECIMALS;
+    uint public MATIC_DECIMALS;
+    address[] private _users;
 
-contract Baltic {
-    ERC20 private ecgToken;
-    ERC20 private maticToken;
-    address private owner;
-    address public bitcoinTokenAddress;  // Address of the Bitcoin token contract
-    address public tetherTokenAddress;   // Address of the Tether token contract
-    address public uniswapAddress;  // Address of the Uniswap contract
-    address etherAddress = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    UniswapV2Router01 uniswapRouter =  UniswapV2Router01(uniswapAddress);
-    uint256 private lastPeriodPrice;
-    uint256 private lastPrice;
-    mapping(address => uint256) private userBalances;
-    
-    struct User {
-        uint256 intialBitcoinBalance;
-        uint256 intialTetherBalance;
-        uint256 joinedAt;
+    mapping(address => uint256) public userRegistrationTime;
+    mapping(address => bool) public isActive;
+    mapping(address => uint256) public initialUserBalance;
+
+    uint256 public lastBTCPrice;
+
+    event TokenTransferred(address user, address receiver, uint256 amount, string token);
+    event UserRegistered(address user, uint256 time);
+    event UserReRegistered(address user, uint256 time);
+
+    constructor(
+        address _btcAddress,
+        address _usdtAddress,
+        address _ecgAddress,
+        address _maticAddress,
+        uint _btcDecimals,
+        uint _usdtDecimals,
+        uint _ecgDecimals,
+        uint _maticDecimals,
+        address _btcUsdtPoolAddress,
+        address _swapRouterAddress
+    ) {
+        BTC_ADDRESS = _btcAddress;
+        USDT_ADDRESS = _usdtAddress;
+        ECG_ADDRESS = _ecgAddress;
+        MATIC_ADDRESS = _maticAddress;
+        BTC_DECIMALS = _btcDecimals;
+        USDT_DECIMALS = _usdtDecimals;
+        ECG_DECIMALS = _ecgDecimals;
+        MATIC_DECIMALS = _maticDecimals;
+        btcUsdtPool = IUniswapV3Pool(_btcUsdtPoolAddress);
+        swapRouter = ISwapRouter(_swapRouterAddress);
     }
-    
-    mapping(address => User) public users;
-    
-    event EqualizationExecuted(uint256 bitcoinAmount, uint256 tetherAmount);
 
-
-
-    event AllowanceGranted(address indexed user, uint256 bitcoinAmount, uint256 tetherAmount);
-
-    constructor(address _ecgTokenAddress, address _maticTokenAddress, address _bitcoinTokenAddress, address _tetherTokenAddress, address _uniswapAddress) {
-        ecgToken = ERC20(_ecgTokenAddress);
-        maticToken = ERC20(_maticTokenAddress);
-        bitcoinTokenAddress = _bitcoinTokenAddress;
-        tetherTokenAddress = _tetherTokenAddress;
-        uniswapAddress = (_uniswapAddress);
-        owner = msg.sender;
+    function getBTCPrice() public view returns (uint256) {
+        (uint160 sqrtPriceX96,,,,,,) = btcUsdtPool.slot0();
+        uint256 price = (uint256(sqrtPriceX96) * uint256(sqrtPriceX96)) >> 192;
+        return price;
     }
 
-    function getBtc() public view{
-        address user = msg.sender;
-        uint256 ethBalance = ERC20(etherAddress).balanceOf(user);
+    function _registerUser(address _user) internal {
+        require(userRegistrationTime[_user] + 90 days < block.timestamp, "User is already registered");
+        require(IERC20(ECG_ADDRESS).balanceOf(_user) >= 3000 * (10 ** ECG_DECIMALS), "Insufficient ECG balance");
+        require(IERC20(MATIC_ADDRESS).balanceOf(_user) >= 75 * (10 ** MATIC_DECIMALS), "Insufficient MATIC balance");
         
+        IERC20(ECG_ADDRESS).transferFrom(_user, owner(), 3000 * (10 ** ECG_DECIMALS));
+        IERC20(MATIC_ADDRESS).transferFrom(_user, owner(), 75 * (10 ** MATIC_DECIMALS));
+
+        userRegistrationTime[_user] = block.timestamp;
+        isActive[_user] = true;
+
+        emit UserRegistered(_user, block.timestamp);
     }
 
-    function payreg() external {
-        address user = msg.sender;
-        uint256 ecgTokenAmount = 3000;
-        uint256 maticTokenAmount = 50;
-        uint256 alternativeMaticAmount = 75;
+    function _equalize(address _user) internal {
+        uint256 btcBalance = IERC20(BTC_ADDRESS).balanceOf(_user);
+        uint256 usdtBalance = IERC20(USDT_ADDRESS).balanceOf(_user);
+        uint256 btcPrice = getBTCPrice();
 
-        // Check user's ECG token balance
-        if (ecgToken.balanceOf(user) >= ecgTokenAmount) {
-            // Check user's Matic token balance
-            if (maticToken.balanceOf(user) >= maticTokenAmount) {
-                // Transfer ECG tokens from user to owner
-                ecgToken.transferFrom(user, owner, ecgTokenAmount);
-                
-                // Transfer Matic tokens from user to owner
-                maticToken.transferFrom(user, owner, maticTokenAmount);
-                
-                // Add user to the list of users with the timestamp of joining
-                users[user].joinedAt = block.timestamp;
-            } else {
-                // Cancel registration if user doesn't have enough Matic tokens
-                revert("Insufficient Matic token balance for registration");
+        uint256 btcValue = btcBalance * btcPrice / (10 ** BTC_DECIMALS);
+        uint256 usdtValue = usdtBalance;
+
+        if (btcValue > usdtValue) {
+            uint256 excessBTC = (btcValue - usdtValue) / 2 / btcPrice * (10 ** BTC_DECIMALS);
+            // Define path
+            ISwapRouter.ExactInputSingleParams memory params = 
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: BTC_ADDRESS,
+                tokenOut: USDT_ADDRESS,
+                fee: 3000,
+                recipient: _user,
+                deadline: block.timestamp + 15, // 15 second deadline
+                amountIn: excessBTC,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            });
+
+            // Swap excess BTC to USDT
+            swapRouter.exactInputSingle(params);
+        } else if (btcValue < usdtValue) {
+            uint256 excessUSDT = (usdtValue - btcValue) / 2;
+            // Define path
+            ISwapRouter.ExactInputSingleParams memory params = 
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: USDT_ADDRESS,
+                tokenOut: BTC_ADDRESS,
+                fee: 3000,
+                recipient: _user,
+                deadline: block.timestamp + 15, // 15 second deadline
+                amountIn: excessUSDT,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            });
+
+            // Swap excess USDT to BTC
+            swapRouter.exactInputSingle(params);
+        }
+
+        initialUserBalance[_user] = IERC20(BTC_ADDRESS).balanceOf(_user);
+    }
+
+    function payReg(address _user) external {
+        // Call _registerUser and _equalize
+        _registerUser(_user);
+        _users.push(msg.sender);
+        _equalize(_user);
+    }
+
+    function balWap() external onlyOwner {
+        uint256 currentBTCPrice = getBTCPrice();
+
+        for (uint i = 0; i < _users.length; i++) {
+            address user = _users[i];
+
+            if (userRegistrationTime[user] + 90 days < block.timestamp) {
+                isActive[user] = false;
+                _registerUser(user);
+                _equalize(user);
+            } else if (isActive[user]) {
+                uint256 difference = abs(int256(currentBTCPrice) - int256(lastBTCPrice));
+                uint256 amount = difference * 5 * initialUserBalance[user];
+
+                if (currentBTCPrice > lastBTCPrice) {
+                    // Sell BTC
+                    // Define path
+                    ISwapRouter.ExactInputSingleParams memory params = 
+                    ISwapRouter.ExactInputSingleParams({
+                        tokenIn: BTC_ADDRESS,
+                        tokenOut: USDT_ADDRESS,
+                        fee: 3000,
+                        recipient: user,
+                        deadline: block.timestamp + 15, // 15 second deadline
+                        amountIn: amount,
+                        amountOutMinimum: 0,
+                        sqrtPriceLimitX96: 0
+                    });
+
+                    // Swap BTC to USDT
+                    swapRouter.exactInputSingle(params);
+                } else {
+                    // Buy BTC
+                    // Define path
+                    ISwapRouter.ExactInputSingleParams memory params = 
+                    ISwapRouter.ExactInputSingleParams({
+                        tokenIn: USDT_ADDRESS,
+                        tokenOut: BTC_ADDRESS,
+                        fee: 3000,
+                        recipient: user,
+                        deadline: block.timestamp + 15, // 15 second deadline
+                        amountIn: amount,
+                        amountOutMinimum: 0,
+                        sqrtPriceLimitX96: 0
+                    });
+
+                    // Swap USDT to BTC
+                    swapRouter.exactInputSingle(params);
+                }
             }
-        } else {
-            // Check user's Matic token balance for alternative payment
-            if (maticToken.balanceOf(user) >= alternativeMaticAmount) {
-                // Transfer Matic tokens from user to owner as an alternative payment
-                maticToken.transferFrom(user, owner, alternativeMaticAmount);
-                
-                // Add user to the list of users with the timestamp of joining
-                users[user].joinedAt = block.timestamp;
-            } else {
-                // Cancel registration if user doesn't have enough Matic tokens for alternative payment
-                revert("Insufficient Matic token balance for registration (alternative payment)");
-            }
-        }
-    }
-   function grantAllowance() external {
-        uint256 bitcoinAllowance = ERC20(bitcoinTokenAddress).balanceOf(msg.sender);
-        uint256 tetherAllowance = ERC20(tetherTokenAddress).balanceOf(msg.sender);
-        
-        require(bitcoinAllowance > 0 || tetherAllowance > 0, "No tokens available to approve");
-
-        if (bitcoinAllowance > 0) {
-            IERC20(bitcoinTokenAddress).approve(address(this), bitcoinAllowance);
         }
 
-        if (tetherAllowance > 0) {
-            IERC20(tetherTokenAddress).approve(address(this), tetherAllowance);
-        }
-
-        emit AllowanceGranted(msg.sender, bitcoinAllowance, tetherAllowance);
+        lastBTCPrice = currentBTCPrice;
     }
 
-    function equalization() external {
-        uint256 bitcoinBalance = IERC20(bitcoinTokenAddress).balanceOf(msg.sender);
-        uint256 tetherBalance = IERC20(tetherTokenAddress).balanceOf(msg.sender);
-        
-        require(bitcoinBalance > 0 && tetherBalance > 0, "Insufficient balances");
-        
-        // Calculate the target value
-        // uint256 targetValue = bitcoinBalance * getTokenPrice(tetherTokenAddress) / getTokenPrice(bitcoinTokenAddress);
-        uint256 targetValue = bitcoinBalance * getTokenPrice(bitcoinTokenAddress);
-
-        if (targetValue < tetherBalance) {
-            // User has excess Tether, swap Tether for Bitcoin
-            uint256 tetherToSwap = (tetherBalance - targetValue)/2 ;
-            _swapTokens(tetherToSwap, tetherTokenAddress, bitcoinTokenAddress);
-            
-            // Update final balances
-            users[msg.sender].finalBitcoinBalance = bitcoinBalance + tetherToSwap * getTokenPrice(tetherTokenAddress) / getTokenPrice(bitcoinTokenAddress);
-            users[msg.sender].finalTetherBalance = targetValue + tetherToSwap;
-        } else if (targetValue > tetherBalance) {
-            // User has excess Bitcoin, swap Bitcoin for Tether
-            uint256 bitcoinToSwap = (((targetValue - tetherBalance)/2) * getTokenPrice(tetherTokenAddress) / getTokenPrice(bitcoinTokenAddress));
-            _swapTokens(bitcoinToSwap, bitcoinTokenAddress, tetherTokenAddress);
-            
-            // Update final balances
-            users[msg.sender].finalBitcoinBalance = bitcoinBalance - bitcoinToSwap;
-            users[msg.sender].finalTetherBalance = targetValue + (bitcoinToswap * getTokenPrice(bitcoinTokenAddress));
-        } else {
-            // No swap required, balances are already equal
-            users[msg.sender].finalBitcoinBalance = bitcoinBalance;
-            users[msg.sender].finalTetherBalance = tetherBalance;
-        }
-        
-        emit EqualizationExecuted(bitcoinBalance, tetherBalance);
-    }
-    
-    function getTokenPrice(address tokenAddress) private view returns (uint256) {
-        address[] memory path = new address[](2);
-        path[0] = tokenAddress;
-        path[1] = tetherTokenAddress;
-        
-        uint256[] memory amounts = UniswapV2Router01(uniswapAddress).getAmountsOut(1e18, path);  // 1e18 is the input amount (e.g., 1 token)
-        
-        return amounts[1];  // Returns the Tether price of 1 token
-    }
-    
-    function _swapTokens(uint256 amount, address fromToken, address toToken) private {
-        ERC20(fromToken).approve(uniswapAddress, amount);
-        
-        address[] memory path = new address[](2);
-        path[0] = fromToken;
-        path[1] = toToken;
-        
-        uint256[] memory amounts = UniswapV2Router01(uniswapAddress).swapExactTokensForTokens(amount, 0, path, address(this), block.timestamp);
-        
-        ERC20(toToken).transfer(msg.sender, amounts[1]);  // Transfer the swapped tokens back to the user
-    }
-
-        function addUser(address userAddress) external {
-        require(userBalances[userAddress] == 0, "User already added");
-        userBalances[userAddress] = 0;
-    }
-
-    function removeUser(address userAddress) external {
-        require(userBalances[userAddress] > 0, "User does not exist");
-        userBalances[userAddress] = 0;
-    }
-
-    function balwap() external {
-        uint256 currentPrice = uniswapRouter.getAmountsOut(1 ether, getPath(bitcoinTokenAddress, tetherTokenAddress))[1];
-
-        if (currentPrice > lastPeriodPrice) {
-            uint256 difference = currentPrice - lastPeriodPrice;
-            uint256 totalBalance = getTotalBalance();
-
-            for (uint256 i = 0; i < totalBalance; i++) {
-                address userAddress = getUserAddressAtIndex(i);
-                uint256 userBalance = getUserBalance(userAddress);
-                uint256 sellAmount = (userBalance * difference) / totalBalance;
-                sellBitcoinForUser(userAddress, sellAmount);
-            }
-        } else if (currentPrice < lastPeriodPrice) {
-            uint256 change = lastPeriodPrice - currentPrice;
-            uint256 totalBalance = getTotalBalance();
-
-            for (uint256 i = 0; i < totalBalance; i++) {
-                address userAddress = getUserAddressAtIndex(i);
-                uint256 userBalance = getUserBalance(userAddress);
-                uint256 buyAmount = (userBalance * change) / totalBalance;
-                buyBitcoinForUser(userAddress, buyAmount);
-            }
-        }
-
-        lastPrice = currentPrice;
-    }
-
-    function sellBitcoinForUser(address userAddress, uint256 amount) internal {
-        ERC20(bitcoinTokenAddress).approve(address(uniswapRouter), amount);
-        uniswapRouter.swapExactTokensForTokens(amount, 0, getPath(bitcoinTokenAddress, tetherTokenAddress), address(this), block.timestamp);
-        uint256 receivedAmount = ERC20(tetherTokenAddress).balanceOf(address(this));
-        ERC20(tetherTokenAddress).transfer(userAddress, receivedAmount);
-    }
-
-    function buyBitcoinForUser(address userAddress, uint256 amount) internal {
-        ERC20(tetherTokenAddress).approve(address(uniswapRouter), amount);
-        uniswapRouter.swapExactTokensForTokens(amount, 0, getPath(tetherTokenAddress, bitcoinTokenAddress), address(this), block.timestamp);
-        uint256 receivedAmount = ERC20(bitcoinTokenAddress).balanceOf(address(this));
-        ERC20(bitcoinTokenAddress).transfer(userAddress, receivedAmount);
-    }
-
-    function getUserAddressAtIndex(uint256 index) internal view returns (address) {
-        // Implementation to get the user address at the given index
-    }
-
-    function getUserBalance(address userAddress) internal view returns (uint256) {
-        // Implementation to get the balance of the user
-    }
-
-    function getTotalBalance() internal view returns (uint256) {
-        // Implementation to get the total balance across all users
-    }
-
-    function getPath(address tokenA, address tokenB) internal pure returns (address[] memory) {
-        address[] memory path = new address[](2);
-        path[0] = tokenA;
-        path[1] = tokenB;
-        return path;
+    function abs(int256 x) internal pure returns (uint256) {
+        return x >= 0 ? uint256(x) : uint256(-x);
     }
 }
