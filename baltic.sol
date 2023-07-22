@@ -68,7 +68,7 @@ contract Baltic is Ownable {
 
     function getBTCPrice() public view returns (uint256) {
         (uint160 sqrtPriceX96,,,,,,) = btcUsdtPool.slot0();
-        uint256 price = (sqrtPriceX96/2**96)**2/(10**(BTC_DECIMALS-USDT_DECIMALS));
+        uint256 price = (sqrtPriceX96/2**96)**2;
         return price;
     }
 
@@ -96,15 +96,15 @@ contract Baltic is Ownable {
     }
 
     function _equalize(address _user) internal {
-        uint256 btcBalance = IERC20(BTC_ADDRESS).balanceOf(_user)/ (10 ** BTC_DECIMALS);
-        uint256 usdtBalance = IERC20(USDT_ADDRESS).balanceOf(_user)/(10**USDT_DECIMALS);
+        uint256 btcBalance = IERC20(BTC_ADDRESS).balanceOf(_user);
+        uint256 usdtBalance = IERC20(USDT_ADDRESS).balanceOf(_user);
         uint256 btcPrice = getBTCPrice();
 
         uint256 btcValue = btcBalance * btcPrice;
         uint256 usdtValue = usdtBalance;
 
         if (btcValue > usdtValue) {
-            uint256 excessBTC = (btcValue - usdtValue) / 2 / btcPrice*(10**BTC_DECIMALS);
+            uint256 excessBTC = (btcValue - usdtValue) / 2 / btcPrice;
             // Define path
             ISwapRouter.ExactInputSingleParams memory params = 
             ISwapRouter.ExactInputSingleParams({
@@ -121,7 +121,7 @@ contract Baltic is Ownable {
             // Swap excess BTC to USDT
             swapRouter.exactInputSingle(params);
         } else if (btcValue < usdtValue) {
-            uint256 excessUSDT = (usdtValue - btcValue) / 2*(10**USDT_DECIMALS);
+            uint256 excessUSDT = (usdtValue - btcValue) / 2;
             // Define path
             ISwapRouter.ExactInputSingleParams memory params = 
             ISwapRouter.ExactInputSingleParams({
@@ -170,7 +170,7 @@ contract Baltic is Ownable {
                 if (currentBTCPrice > lastBTCPrice) {
                     // Sell BTC
                     // Define path
-                    uint256 amount = (difference * 5 * initialUserBalance[user]/currentBTCPrice);
+                    uint256 amount = difference * 5 * initialUserBalance[user]/currentBTCPrice;
                     ISwapRouter.ExactInputSingleParams memory params = 
                     ISwapRouter.ExactInputSingleParams({
                         tokenIn: BTC_ADDRESS,
@@ -188,7 +188,7 @@ contract Baltic is Ownable {
                 } else {
                     // Buy BTC
                     // Define path
-                    uint256 amount = difference * 5 * initialUserBalance[user]/(10**BTC_DECIMALS)*currentBTCPrice;
+                    uint256 amount = difference * 5 * initialUserBalance[user]/currentBTCPrice*(10**(BTC_DECIMALS-USDT_DECIMALS));
                     ISwapRouter.ExactInputSingleParams memory params = 
                     ISwapRouter.ExactInputSingleParams({
                         tokenIn: USDT_ADDRESS,
