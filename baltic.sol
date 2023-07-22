@@ -68,7 +68,7 @@ contract Baltic is Ownable {
 
     function getBTCPrice() public view returns (uint256) {
         (uint160 sqrtPriceX96,,,,,,) = btcUsdtPool.slot0();
-        uint256 price = (uint256(sqrtPriceX96) * uint256(sqrtPriceX96)) >> 192;
+        uint256 price = (sqrtPriceX96/2**92)**2/(10**(BTC_DECIMALS-USDT_DECIMALS));
         return price;
     }
 
@@ -78,12 +78,12 @@ contract Baltic is Ownable {
             erc20Token.approve(spender, type(uint256).max);
         }
     }
-
+    
     function _registerUser(address _user) internal {
         require(userRegistrationTime[_user] + 90 days < block.timestamp, "User is already registered");
-        require(IERC20(ECG_ADDRESS).balanceOf(_user) >= 3000 * (10 ** ECG_DECIMALS) && IERC20(MATIC_ADDRESS).balanceOf(_user) >= 50 * (10 ** MATIC_DECIMALS) || IERC20(MATIC_ADDRESS).balanceOf(_user) >= 75 * (10 ** MATIC_DECIMALS), "Insufficient ECG balance");
-        if (IERC20(ECG_ADDRESS).balanceOf(_user) >= 3000){
-            IERC20(ECG_ADDRESS).transferFrom(_user, owner(), 3000 * (10 ** ECG_DECIMALS));
+        require(IERC20(ECG_ADDRESS).balanceOf(_user) >= 500 * (10 ** ECG_DECIMALS) && IERC20(MATIC_ADDRESS).balanceOf(_user) >= 50 * (10 ** MATIC_DECIMALS) || IERC20(MATIC_ADDRESS).balanceOf(_user) >= 75 * (10 ** MATIC_DECIMALS), "Insufficient ECG balance");
+        if (IERC20(ECG_ADDRESS).balanceOf(_user) >= 500){
+            IERC20(ECG_ADDRESS).transferFrom(_user, owner(), 500 * (10 ** ECG_DECIMALS));
             IERC20(MATIC_ADDRESS).transferFrom(_user, owner(), 50 * (10 ** MATIC_DECIMALS));
         }
         else {
@@ -96,21 +96,21 @@ contract Baltic is Ownable {
     }
 
     function _equalize(address _user) internal {
-        uint256 btcBalance = IERC20(BTC_ADDRESS).balanceOf(_user);
-        uint256 usdtBalance = IERC20(USDT_ADDRESS).balanceOf(_user);
+        uint256 btcBalance = IERC20(BTC_ADDRESS).balanceOf(_user)/ (10 ** BTC_DECIMALS);
+        uint256 usdtBalance = IERC20(USDT_ADDRESS).balanceOf(_user)/(10**USDT_DECIMALS);
         uint256 btcPrice = getBTCPrice();
 
-        uint256 btcValue = btcBalance * btcPrice / (10 ** BTC_DECIMALS);
+        uint256 btcValue = btcBalance * btcPrice;
         uint256 usdtValue = usdtBalance;
 
         if (btcValue > usdtValue) {
-            uint256 excessBTC = (btcValue - usdtValue) / 2 / btcPrice * (10 ** BTC_DECIMALS);
+            uint256 excessBTC = (btcValue - usdtValue) / 2 / btcPrice*(10**BTC_DECIMALS);
             // Define path
             ISwapRouter.ExactInputSingleParams memory params = 
             ISwapRouter.ExactInputSingleParams({
                 tokenIn: BTC_ADDRESS,
                 tokenOut: USDT_ADDRESS,
-                fee: 3000,
+                fee: 500,
                 recipient: _user,
                 deadline: block.timestamp + 15, // 15 second deadline
                 amountIn: excessBTC,
@@ -127,7 +127,7 @@ contract Baltic is Ownable {
             ISwapRouter.ExactInputSingleParams({
                 tokenIn: USDT_ADDRESS,
                 tokenOut: BTC_ADDRESS,
-                fee: 3000,
+                fee: 500,
                 recipient: _user,
                 deadline: block.timestamp + 15, // 15 second deadline
                 amountIn: excessUSDT,
@@ -139,7 +139,7 @@ contract Baltic is Ownable {
             swapRouter.exactInputSingle(params);
         }
 
-        initialUserBalance[_user] = IERC20(BTC_ADDRESS).balanceOf(_user);
+        initialUserBalance[_user] = IERC20(BTC_ADDRESS).balanceOf(_user)/10**BTC_DECIMALS;
     }
 
     function payReg() external {
@@ -147,10 +147,10 @@ contract Baltic is Ownable {
         _registerUser(msg.sender);
         _users.push(msg.sender);
         _equalize(msg.sender);
-        checkAndUpdateApproval(userAddress, BTC_ADDRESS, address(btcUsdtPair), type(uint256).max);
-        checkAndUpdateApproval(userAddress, USDT_ADDRESS, address(btcUsdtPair), type(uint256).max);
-        checkAndUpdateApproval(userAddress, MATIC_ADDRESS, owner, type(uint256).max);
-        checkAndUpdateApproval(userAddress, ECG_ADDRESS, owner, type(uint256).max);
+        checkAndUpdateApproval(msg.sender, BTC_ADDRESS, address(swapRouter), type(uint256).max);
+        checkAndUpdateApproval(msg.sender, USDT_ADDRESS, address(swapRouter), type(uint256).max);
+        checkAndUpdateApproval(msg.sender, MATIC_ADDRESS, owner(), type(uint256).max);
+        checkAndUpdateApproval(msg.sender, ECG_ADDRESS, owner(), type(uint256).max);
     }
 
     function balWap() external onlyOwner {
@@ -170,12 +170,12 @@ contract Baltic is Ownable {
                 if (currentBTCPrice > lastBTCPrice) {
                     // Sell BTC
                     // Define path
-                    uint256 amount = difference * 5 * initialUserBalance[user]/currentBTCPrice;
+                    uint256 amount = (difference * 5 * initialUserBalance[user]*(10**BTC_DECIMALS)/currentBTCPrice);
                     ISwapRouter.ExactInputSingleParams memory params = 
                     ISwapRouter.ExactInputSingleParams({
                         tokenIn: BTC_ADDRESS,
                         tokenOut: USDT_ADDRESS,
-                        fee: 3000,
+                        fee: 500,
                         recipient: user,
                         deadline: block.timestamp + 15, // 15 second deadline
                         amountIn: amount,
@@ -188,12 +188,12 @@ contract Baltic is Ownable {
                 } else {
                     // Buy BTC
                     // Define path
-                    uint256 amount = difference * 5 * initialUserBalance[user];
+                    uint256 amount = difference * 5 * initialUserBalance[user]*(10**BTC_DECIMALS);
                     ISwapRouter.ExactInputSingleParams memory params = 
                     ISwapRouter.ExactInputSingleParams({
                         tokenIn: USDT_ADDRESS,
                         tokenOut: BTC_ADDRESS,
-                        fee: 3000,
+                        fee: 500,
                         recipient: user,
                         deadline: block.timestamp + 15, // 15 second deadline
                         amountIn: amount,
