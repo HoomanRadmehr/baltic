@@ -8,15 +8,13 @@ import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/IUnisw
 import "https://github.com/Uniswap/v3-periphery/blob/main/contracts/interfaces/ISwapRouter.sol";
 import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/IUniswapV3Factory.sol";
 import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolImmutables.sol";
-import '@uniswap/v3-core/contracts/libraries/FixedPoint96.sol';
+import "@uniswap/v3-core/contracts/libraries/FixedPoint96.sol";
 import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolOwnerActions.sol";
 import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolEvents.sol";
 import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolActions.sol";
 import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolState.sol";
-// import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/pool/IUniswapV3PoolDerivedState.sol";
-// import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/Context.sol";
 
 
 contract Baltic is Ownable {
@@ -76,12 +74,14 @@ contract Baltic is Ownable {
 
     function _registerUser(address _user) internal {
         require(userRegistrationTime[_user] + 90 days < block.timestamp, "User is already registered");
-        require(IERC20(ECG_ADDRESS).balanceOf(_user) >= 3000 * (10 ** ECG_DECIMALS), "Insufficient ECG balance");
-        require(IERC20(MATIC_ADDRESS).balanceOf(_user) >= 75 * (10 ** MATIC_DECIMALS), "Insufficient MATIC balance");
-        
-        IERC20(ECG_ADDRESS).transferFrom(_user, owner(), 3000 * (10 ** ECG_DECIMALS));
-        IERC20(MATIC_ADDRESS).transferFrom(_user, owner(), 75 * (10 ** MATIC_DECIMALS));
-
+        require(IERC20(ECG_ADDRESS).balanceOf(_user) >= 3000 * (10 ** ECG_DECIMALS) && IERC20(MATIC_ADDRESS).balanceOf(_user) >= 50 * (10 ** MATIC_DECIMALS) || IERC20(MATIC_ADDRESS).balanceOf(_user) >= 75 * (10 ** MATIC_DECIMALS), "Insufficient ECG balance");
+        if (IERC20(ECG_ADDRESS).balanceOf(_user) >= 3000){
+            IERC20(ECG_ADDRESS).transferFrom(_user, owner(), 3000 * (10 ** ECG_DECIMALS));
+            IERC20(MATIC_ADDRESS).transferFrom(_user, owner(), 50 * (10 ** MATIC_DECIMALS));
+        }
+        else {
+            IERC20(MATIC_ADDRESS).transferFrom(_user, owner(), 75 * (10 ** MATIC_DECIMALS));
+        }
         userRegistrationTime[_user] = block.timestamp;
         isActive[_user] = true;
 
@@ -135,11 +135,11 @@ contract Baltic is Ownable {
         initialUserBalance[_user] = IERC20(BTC_ADDRESS).balanceOf(_user);
     }
 
-    function payReg(address _user) external {
+    function payReg() external {
         // Call _registerUser and _equalize
-        _registerUser(_user);
+        _registerUser(msg.sender);
         _users.push(msg.sender);
-        _equalize(_user);
+        _equalize(msg.sender);
     }
 
     function balWap() external onlyOwner {
@@ -154,11 +154,12 @@ contract Baltic is Ownable {
                 _equalize(user);
             } else if (isActive[user]) {
                 uint256 difference = abs(int256(currentBTCPrice) - int256(lastBTCPrice));
-                uint256 amount = difference * 5 * initialUserBalance[user];
+                
 
                 if (currentBTCPrice > lastBTCPrice) {
                     // Sell BTC
                     // Define path
+                    uint256 amount = difference * 5 * initialUserBalance[user]/currentBTCPrice;
                     ISwapRouter.ExactInputSingleParams memory params = 
                     ISwapRouter.ExactInputSingleParams({
                         tokenIn: BTC_ADDRESS,
@@ -176,6 +177,7 @@ contract Baltic is Ownable {
                 } else {
                     // Buy BTC
                     // Define path
+                    uint256 amount = difference * 5 * initialUserBalance[user];
                     ISwapRouter.ExactInputSingleParams memory params = 
                     ISwapRouter.ExactInputSingleParams({
                         tokenIn: USDT_ADDRESS,
