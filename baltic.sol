@@ -68,7 +68,7 @@ contract Baltic is Ownable {
 
     function getBTCPrice() public view returns (uint256) {
         (uint160 sqrtPriceX96,,,,,,) = btcUsdtPool.slot0();
-        uint256 price = (sqrtPriceX96/2**92)**2/(10**(BTC_DECIMALS-USDT_DECIMALS));
+        uint256 price = (sqrtPriceX96/2**96)**2/(10**(BTC_DECIMALS-USDT_DECIMALS));
         return price;
     }
 
