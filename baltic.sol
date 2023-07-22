@@ -121,7 +121,7 @@ contract Baltic is Ownable {
             // Swap excess BTC to USDT
             swapRouter.exactInputSingle(params);
         } else if (btcValue < usdtValue) {
-            uint256 excessUSDT = (usdtValue - btcValue) / 2;
+            uint256 excessUSDT = (usdtValue - btcValue) / 2*(10**USDT_DECIMALS);
             // Define path
             ISwapRouter.ExactInputSingleParams memory params = 
             ISwapRouter.ExactInputSingleParams({
@@ -139,7 +139,7 @@ contract Baltic is Ownable {
             swapRouter.exactInputSingle(params);
         }
 
-        initialUserBalance[_user] = IERC20(BTC_ADDRESS).balanceOf(_user)/10**BTC_DECIMALS;
+        initialUserBalance[_user] = IERC20(BTC_ADDRESS).balanceOf(_user);
     }
 
     function payReg() external {
@@ -170,7 +170,7 @@ contract Baltic is Ownable {
                 if (currentBTCPrice > lastBTCPrice) {
                     // Sell BTC
                     // Define path
-                    uint256 amount = (difference * 5 * initialUserBalance[user]*(10**BTC_DECIMALS)/currentBTCPrice);
+                    uint256 amount = (difference * 5 * initialUserBalance[user]/currentBTCPrice);
                     ISwapRouter.ExactInputSingleParams memory params = 
                     ISwapRouter.ExactInputSingleParams({
                         tokenIn: BTC_ADDRESS,
@@ -188,7 +188,7 @@ contract Baltic is Ownable {
                 } else {
                     // Buy BTC
                     // Define path
-                    uint256 amount = difference * 5 * initialUserBalance[user]*(10**BTC_DECIMALS);
+                    uint256 amount = difference * 5 * initialUserBalance[user]/(10**BTC_DECIMALS)*currentBTCPrice;
                     ISwapRouter.ExactInputSingleParams memory params = 
                     ISwapRouter.ExactInputSingleParams({
                         tokenIn: USDT_ADDRESS,
